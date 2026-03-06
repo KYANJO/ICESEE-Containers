@@ -93,10 +93,10 @@ ICESEE-Container/
 │   ├── issm-container/
 │   ├── icesee-container/
 │   └── firedrake-icepack-issm-icesee-container/
-├── raw-recipes
-│   ├── firedrake-container
-│   ├── icepack-container
-│   ├── issm-container
-│   ├── issm-icesee-container
-│   └── firedrake-icepack-container
+├── raw-recipes/
+│   ├── firedrake-container/
+│   ├── icepack-container/
+│   ├── issm-container/
+│   ├── issm-icesee-container/
+│   └── firedrake-icepack-container/
 └── README.md

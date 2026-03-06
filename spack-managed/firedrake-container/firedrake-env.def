@@ -1,0 +1,108 @@
+Bootstrap: docker
+From: docker.io/bkyanjo/spack-firedrake:latest
+
+%post
+    set -eu
+
+    # Minimal runtime tools
+    apt-get update && apt-get install -y --no-install-recommends \
+        curl \
+        ca-certificates \
+        && rm -rf /var/lib/apt/lists/*
+
+    # Create helper: activate Spack env + Firedrake venv
+    cat << 'EOF' > /opt/activate_firedrake.sh
+#!/bin/sh
+set -e
+
+. /opt/spack-src/share/spack/setup-env.sh
+spack env activate /opt/spack-environment
+
+MPI_DIR="$(spack location -i openmpi)"
+PETSC_DIR="$(spack location -i petsc)"
+
+export PATH="/opt/venv-firedrake/bin:${MPI_DIR}/bin:${PATH}"
+export LD_LIBRARY_PATH="${MPI_DIR}/lib:${PETSC_DIR}/lib:${LD_LIBRARY_PATH:-}"
+export CC="${MPI_DIR}/bin/mpicc"
+export CXX="${MPI_DIR}/bin/mpicxx"
+export FC="${MPI_DIR}/bin/mpifort"
+export MPICC="${MPI_DIR}/bin/mpicc"
+export MPICXX="${MPI_DIR}/bin/mpicxx"
+export MPIFC="${MPI_DIR}/bin/mpifort"
+export PETSC_DIR="${PETSC_DIR}"
+export HDF5_MPI=ON
+unset PETSC_ARCH
+EOF
+
+    # Create helper: set persistent cache directories
+    cat << 'EOF' > /opt/set_persistent_dir.sh
+#!/bin/sh
+set -e
+
+if [ -d "/scratch" ]; then
+    PERSISTENT_DIR="/scratch/${USER:-$(id -un)}/firedrake_cache"
+else
+    PERSISTENT_DIR="/tmp/${USER:-$(id -un)}/firedrake_cache"
+fi
+
+mkdir -p "$PERSISTENT_DIR/pyop2"
+mkdir -p "$PERSISTENT_DIR/tsfc"
+mkdir -p "$PERSISTENT_DIR/xdg"
+
+export PERSISTENT_DIR
+export PYOP2_CACHE_DIR="$PERSISTENT_DIR/pyop2"
+export FIREDRAKE_TSFC_KERNEL_CACHE_DIR="$PERSISTENT_DIR/tsfc"
+export XDG_CACHE_HOME="$PERSISTENT_DIR/xdg"
+EOF
+
+    chmod +x /opt/activate_firedrake.sh /opt/set_persistent_dir.sh
+
+%environment
+    export OMP_NUM_THREADS=1
+    export OPENBLAS_NUM_THREADS=1
+    export HDF5_MPI=ON
+    export PERSISTENT_DIR=/tmp/${USER}/firedrake_cache
+    export PYOP2_CACHE_DIR=${PERSISTENT_DIR}/pyop2
+    export FIREDRAKE_TSFC_KERNEL_CACHE_DIR=${PERSISTENT_DIR}/tsfc
+    export XDG_CACHE_HOME=${PERSISTENT_DIR}/xdg
+    export PATH=/opt/venv-firedrake/bin:${PATH}
+
+%runscript
+    #!/bin/sh
+    set -e
+    . /opt/activate_firedrake.sh
+    . /opt/set_persistent_dir.sh
+
+    if [ "$#" -gt 0 ]; then
+        exec "$@"
+    else
+        exec /bin/bash
+    fi
+
+%test
+    . /opt/activate_firedrake.sh
+    . /opt/set_persistent_dir.sh
+    python -c "import firedrake; print('firedrake ok')"
+    python -c "import petsc4py; print('petsc4py ok')"
+    mpicc --version
+
+%labels
+    Author Brian Kyanjo
+    ContactEmail briankyanjo@u.boisestate.edu
+    Name Spack-Firedrake container
+
+%help
+    This Apptainer container starts from docker.io/bkyanjo/spack-firedrake:latest.
+
+    It provides:
+      - Spack-managed Python/MPI/PETSc stack
+      - Firedrake installed in /opt/venv-firedrake
+      - Runtime helpers for cache directories on /scratch or /tmp
+
+    Helper scripts:
+      - /opt/activate_firedrake.sh
+      - /opt/set_persistent_dir.sh
+
+    Typical usage:
+      apptainer exec firedrake-env.sif python -c "import firedrake; print('ok')"
+      apptainer shell firedrake-env.sif

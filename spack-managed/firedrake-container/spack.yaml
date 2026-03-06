@@ -1,0 +1,30 @@
+spack:
+  view: false
+
+  concretizer:
+    unify: when_possible
+
+  config:
+    install_tree:
+      root: /opt/spack
+
+  specs:
+    - python@3.11
+    - py-pip
+    - py-setuptools
+    - py-pkgconfig
+    - py-wheel
+    - py-numpy@1.26.4
+    - py-cython
+    - ninja
+    - pkgconf
+
+    - openmpi@5
+    - hdf5@1.14.5 +mpi ^openmpi@5
+    - py-h5py@3.12.1 +mpi ^hdf5@1.14.5 +mpi ^openmpi@5
+
+    - petsc@3.24.0 +mpi +shared +fortran ~fortran-bindings +mumps +hypre +metis +ptscotch +superlu-dist +suite-sparse +hdf5 +scalapack +fftw +hwloc ^openmpi@5 ^hdf5@1.14.5 +mpi ^fftw+mpi
+    - py-petsc4py@3.24.0 ^petsc@3.24.0
+
+  repos:
+    - /opt/icesee-spack

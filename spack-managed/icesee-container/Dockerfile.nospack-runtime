@@ -115,7 +115,7 @@ export MPICC="${MPI_DIR}/bin/mpicc"
 export MPICXX="${MPI_DIR}/bin/mpicxx"
 export MPIFC="${MPI_DIR}/bin/mpifort"
 export HDF5_MPI=ON
-export PYTHONPATH="/opt/ICESEE:\${PYTHONPATH:-}"
+export PYTHONPATH="/opt:\${PYTHONPATH:-}"
 EOF
 
 RUN source /opt/runtime-env/icesee-env.sh && \
@@ -186,7 +186,7 @@ COPY --from=builder /usr/local/bin/activate-icesee-nospack.sh /usr/local/bin/act
 
 ENV OMP_NUM_THREADS=1
 ENV OPENBLAS_NUM_THREADS=1
-ENV PYTHONPATH=/opt/ICESEE:${PYTHONPATH}
+ENV PYTHONPATH=/opt:${PYTHONPATH}
 
 RUN chmod +x /usr/local/bin/activate-icesee-nospack.sh
 

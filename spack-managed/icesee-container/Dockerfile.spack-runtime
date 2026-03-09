@@ -125,7 +125,7 @@ RUN source /opt/spack-src/share/spack/setup-env.sh && \
     python -m pip install --no-cache-dir -r /opt/requirements/pip.auto.txt && \
     python -m pip install --no-cache-dir -e /opt/ICESEE
 
-ENV PYTHONPATH=/opt/ICESEE:${PYTHONPATH}
+ENV PYTHONPATH=/opt:${PYTHONPATH}
 
 # Build-time sanity checks
 RUN source /opt/spack-src/share/spack/setup-env.sh && \
@@ -223,7 +223,7 @@ COPY --from=builder /usr/local/bin/activate-spack-icesee.sh /usr/local/bin/activ
 
 ENV SPACK_ROOT=/opt/spack-src
 ENV PATH=/opt/spack-src/bin:$PATH
-ENV PYTHONPATH=/opt/ICESEE:${PYTHONPATH}
+ENV PYTHONPATH=/opt:${PYTHONPATH}
 ENV OMP_NUM_THREADS=1
 ENV OPENBLAS_NUM_THREADS=1
 ENV HDF5_MPI=ON

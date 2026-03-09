@@ -96,10 +96,11 @@ RUN source /opt/spack-src/share/spack/setup-env.sh && \
     export HDF5_MPI=ON && \
     "${PYTHON_PREFIX}/bin/python3" -m venv --system-site-packages /opt/venv-firedrake && \
     source /opt/venv-firedrake/bin/activate && \
-    python -m pip install --upgrade pip && \
+    python -m pip install --upgrade "pip<26" setuptools wheel && \
     printf "setuptools<81\nnumpy<2\npetsc4py==3.24.0\n" > /tmp/constraints.txt && \
     export PIP_CONSTRAINT=/tmp/constraints.txt && \
-    python -m pip install "firedrake[check]" && \
+    export FIREDRAKE_VERSION="${FIREDRAKE_VERSION:-2025.10.2}" && \
+    python -m pip install "firedrake[check]==${FIREDRAKE_VERSION}" && \
     mkdir -p /opt/runtime-env && \
     cat > /opt/runtime-env/firedrake-env.sh <<EOF
 export PYTHON_DIR="${PYTHON_PREFIX}"

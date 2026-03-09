@@ -19,6 +19,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     gfortran \
     git \
     gnupg \
+    gmsh \
     lsb-release \
     make \
     m4 \
@@ -64,12 +65,12 @@ COPY scripts /opt/build-scripts
 RUN chmod +x /opt/build-scripts/*.sh
 
 WORKDIR /opt/spack-environment
-RUN . /opt/spack-src/share/spack/setup-env.sh && \
+RUN source /opt/spack-src/share/spack/setup-env.sh && \
     spack env activate . && \
     spack concretize -f && \
     spack install -j"$(nproc)"
 
-RUN . /opt/spack-src/share/spack/setup-env.sh && \
+RUN source /opt/spack-src/share/spack/setup-env.sh && \
     spack env activate /opt/spack-environment && \
     PYTHON="$(spack location -i python)/bin/python3" && \
     "$PYTHON" -m ensurepip --upgrade || true && \
@@ -80,50 +81,93 @@ RUN /opt/build-scripts/build_icepack.sh
 RUN /opt/build-scripts/build_icesee.sh
 RUN /opt/build-scripts/build_issm.sh
 
+# Precompute runtime environments so final image does not need Spack at startup
+RUN source /opt/spack-src/share/spack/setup-env.sh && \
+    spack env activate /opt/spack-environment && \
+    mkdir -p /opt/runtime-env && \
+    OPENMPI_DIR="$(spack location -i openmpi)" && \
+    FIREDRAKE_PETSC_DIR="$(spack location -i 'petsc@3.24.0 ^openmpi@5.0.6')" && \
+    MPICH_DIR="$(spack location -i mpich)" && \
+    ISSM_PETSC_DIR="$(spack location -i 'petsc@3.22.3 ^mpich@4.2.3')" && \
+    PYTHON_DIR="$(spack location -i python)" && \
+    MATLABROOT="${MATLABROOT:-/opt/matlab/R2024b}" && \
+    cat > /opt/runtime-env/firedrake-env.sh <<EOF
+export PYTHON_DIR="${PYTHON_DIR}"
+export MPI_DIR="${OPENMPI_DIR}"
+export PETSC_DIR="${FIREDRAKE_PETSC_DIR}"
+export PATH="/opt/venv-firedrake/bin:${PYTHON_DIR}/bin:${OPENMPI_DIR}/bin:\${PATH}"
+export LD_LIBRARY_PATH="${OPENMPI_DIR}/lib:${FIREDRAKE_PETSC_DIR}/lib:${PYTHON_DIR}/lib:\${LD_LIBRARY_PATH:-}"
+export CC="${OPENMPI_DIR}/bin/mpicc"
+export CXX="${OPENMPI_DIR}/bin/mpicxx"
+export FC="${OPENMPI_DIR}/bin/mpifort"
+export MPICC="${OPENMPI_DIR}/bin/mpicc"
+export MPICXX="${OPENMPI_DIR}/bin/mpicxx"
+export MPIFC="${OPENMPI_DIR}/bin/mpifort"
+export PETSC_DIR="${FIREDRAKE_PETSC_DIR}"
+export HDF5_MPI=ON
+EOF
+    cat > /opt/runtime-env/icepack-env.sh <<EOF
+export PYTHON_DIR="${PYTHON_DIR}"
+export MPI_DIR="${OPENMPI_DIR}"
+export PETSC_DIR="${FIREDRAKE_PETSC_DIR}"
+export PATH="/opt/venv-firedrake/bin:${PYTHON_DIR}/bin:${OPENMPI_DIR}/bin:\${PATH}"
+export LD_LIBRARY_PATH="${OPENMPI_DIR}/lib:${FIREDRAKE_PETSC_DIR}/lib:${PYTHON_DIR}/lib:\${LD_LIBRARY_PATH:-}"
+export CC="${OPENMPI_DIR}/bin/mpicc"
+export CXX="${OPENMPI_DIR}/bin/mpicxx"
+export FC="${OPENMPI_DIR}/bin/mpifort"
+export MPICC="${OPENMPI_DIR}/bin/mpicc"
+export MPICXX="${OPENMPI_DIR}/bin/mpicxx"
+export MPIFC="${OPENMPI_DIR}/bin/mpifort"
+export PETSC_DIR="${FIREDRAKE_PETSC_DIR}"
+export HDF5_MPI=ON
+EOF
+    cat > /opt/runtime-env/icesee-env.sh <<EOF
+export PYTHON_DIR="${PYTHON_DIR}"
+export MPI_DIR="${OPENMPI_DIR}"
+export PETSC_DIR="${FIREDRAKE_PETSC_DIR}"
+export PATH="/opt/venv-firedrake/bin:${PYTHON_DIR}/bin:${OPENMPI_DIR}/bin:\${PATH}"
+export LD_LIBRARY_PATH="${OPENMPI_DIR}/lib:${FIREDRAKE_PETSC_DIR}/lib:${PYTHON_DIR}/lib:\${LD_LIBRARY_PATH:-}"
+export CC="${OPENMPI_DIR}/bin/mpicc"
+export CXX="${OPENMPI_DIR}/bin/mpicxx"
+export FC="${OPENMPI_DIR}/bin/mpifort"
+export MPICC="${OPENMPI_DIR}/bin/mpicc"
+export MPICXX="${OPENMPI_DIR}/bin/mpicxx"
+export MPIFC="${OPENMPI_DIR}/bin/mpifort"
+export PETSC_DIR="${FIREDRAKE_PETSC_DIR}"
+export HDF5_MPI=ON
+export PYTHONPATH="/opt:\${PYTHONPATH:-}"
+EOF
+    cat > /opt/runtime-env/issm-env.sh <<EOF
+export MPI_DIR="${MPICH_DIR}"
+export PETSC_DIR="${ISSM_PETSC_DIR}"
+export PYTHON_DIR="${PYTHON_DIR}"
+export MATLABROOT="${MATLABROOT}"
+export ISSM_DIR="/opt/ISSM"
+export PATH="${MPICH_DIR}/bin:/opt/ISSM/bin:\${PATH}"
+export LD_LIBRARY_PATH="${MPICH_DIR}/lib:${ISSM_PETSC_DIR}/lib:\${LD_LIBRARY_PATH:-}"
+export HDF5_MPI=ON
+EOF
+
 RUN cat > /usr/local/bin/activate-firedrake <<'EOF'
 #!/bin/bash
 set -e
-source /opt/spack-src/share/spack/setup-env.sh
-spack env activate /opt/spack-environment
-MPI_DIR="$(spack location -i openmpi)"
-PETSC_DIR="$(spack location -i 'petsc@3.24.0 ^openmpi@5.0.6')"
-export PATH="/opt/venv-firedrake/bin:${MPI_DIR}/bin:${PATH}"
-export LD_LIBRARY_PATH="${MPI_DIR}/lib:${PETSC_DIR}/lib:${LD_LIBRARY_PATH:-}"
-export CC="${MPI_DIR}/bin/mpicc"
-export CXX="${MPI_DIR}/bin/mpicxx"
-export FC="${MPI_DIR}/bin/mpifort"
-export MPICC="${MPI_DIR}/bin/mpicc"
-export MPICXX="${MPI_DIR}/bin/mpicxx"
-export MPIFC="${MPI_DIR}/bin/mpifort"
-export PETSC_DIR="${PETSC_DIR}"
-export HDF5_MPI=ON
+source /opt/runtime-env/firedrake-env.sh
 unset PETSC_ARCH
 exec "$@"
 EOF
 
 RUN cat > /usr/local/bin/activate-icepack <<'EOF'
 #!/bin/bash
-exec /usr/local/bin/activate-firedrake "$@"
+set -e
+source /opt/runtime-env/icepack-env.sh
+unset PETSC_ARCH
+exec "$@"
 EOF
 
 RUN cat > /usr/local/bin/activate-icesee <<'EOF'
 #!/bin/bash
 set -e
-source /opt/spack-src/share/spack/setup-env.sh
-spack env activate /opt/spack-environment
-MPI_DIR="$(spack location -i openmpi)"
-PETSC_DIR="$(spack location -i 'petsc@3.24.0 ^openmpi@5.0.6')"
-export PATH="/opt/venv-firedrake/bin:${MPI_DIR}/bin:${PATH}"
-export LD_LIBRARY_PATH="${MPI_DIR}/lib:${PETSC_DIR}/lib:${LD_LIBRARY_PATH:-}"
-export CC="${MPI_DIR}/bin/mpicc"
-export CXX="${MPI_DIR}/bin/mpicxx"
-export FC="${MPI_DIR}/bin/mpifort"
-export MPICC="${MPI_DIR}/bin/mpicc"
-export MPICXX="${MPI_DIR}/bin/mpicxx"
-export MPIFC="${MPI_DIR}/bin/mpifort"
-export PETSC_DIR="${PETSC_DIR}"
-export HDF5_MPI=ON
-export PYTHONPATH="/opt/ICESEE:${PYTHONPATH:-}"
+source /opt/runtime-env/icesee-env.sh
 unset PETSC_ARCH
 exec "$@"
 EOF
@@ -131,14 +175,7 @@ EOF
 RUN cat > /usr/local/bin/activate-issm <<'EOF'
 #!/bin/bash
 set -e
-source /opt/spack-src/share/spack/setup-env.sh
-spack env activate /opt/spack-environment
-MPI_DIR="$(spack location -i mpich)"
-PETSC_DIR="$(spack location -i 'petsc@3.22.3 ^mpich@4.2.3')"
-export PATH="${MPI_DIR}/bin:/opt/ISSM/bin:${PATH}"
-export LD_LIBRARY_PATH="${MPI_DIR}/lib:${PETSC_DIR}/lib:${LD_LIBRARY_PATH:-}"
-export ISSM_DIR=/opt/ISSM
-export HDF5_MPI=ON
+source /opt/runtime-env/issm-env.sh
 export MLM_LICENSE_FILE="${MLM_LICENSE_FILE:-1711@matlablic.ecs.gatech.edu}"
 if [ -f /opt/ISSM/etc/environment.sh ]; then
   set +u
@@ -162,10 +199,28 @@ RUN set -euo pipefail; \
         xargs -r strip --strip-unneeded 2>/dev/null || true; \
     done
 
+# Build-time sanity checks
+RUN source /opt/runtime-env/firedrake-env.sh && unset PETSC_ARCH && \
+    python3 -c "import firedrake; print('firedrake OK')"
+
+RUN source /opt/runtime-env/icepack-env.sh && unset PETSC_ARCH && \
+    python3 -c "import icepack; print('icepack OK')"
+
+RUN source /opt/runtime-env/icesee-env.sh && unset PETSC_ARCH && \
+    python3 -c "import ICESEE; print('ICESEE OK')"
+
+RUN source /opt/runtime-env/issm-env.sh && \
+    test -f /opt/ISSM/etc/environment.sh && \
+    mpicc --version
+
 # =========================
-# Stage 2: runtime
+# Stage 2: lean runtime
 # =========================
 FROM mathworks/matlab:r2024b AS runtime
+
+LABEL org.opencontainers.image.authors="Brian Kyanjo <briankyanjo@u.boisestate.edu>" \
+      org.opencontainers.image.title="Combined scientific stack lean runtime" \
+      org.opencontainers.image.description="Lean runtime for Firedrake, Icepack, ICESEE, and ISSM without Spack activation at startup"
 
 SHELL ["/bin/bash", "-lc"]
 ENV DEBIAN_FRONTEND=noninteractive
@@ -177,10 +232,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     file \
     gfortran \
     git \
-    libffi-dev \
-    libhwloc-dev \
-    libnuma-dev \
-    libssl-dev \
+    gmsh \
+    libffi8 \
+    libhwloc15 \
+    libnuma1 \
+    libssl3 \
     libblas-dev \
     liblapack-dev \
     perl \
@@ -195,20 +251,17 @@ RUN locale-gen en_US.UTF-8
 ENV LANG=en_US.UTF-8
 ENV LC_ALL=en_US.UTF-8
 
-COPY --from=builder /opt/spack-src /opt/spack-src
 COPY --from=builder /opt/spack /opt/spack
-COPY --from=builder /opt/spack-environment /opt/spack-environment
 COPY --from=builder /opt/venv-firedrake /opt/venv-firedrake
 COPY --from=builder /opt/ICESEE /opt/ICESEE
 COPY --from=builder /opt/icepack /opt/icepack
 COPY --from=builder /opt/ISSM /opt/ISSM
+COPY --from=builder /opt/runtime-env /opt/runtime-env
 COPY --from=builder /usr/local/bin/activate-firedrake /usr/local/bin/activate-firedrake
 COPY --from=builder /usr/local/bin/activate-icepack /usr/local/bin/activate-icepack
 COPY --from=builder /usr/local/bin/activate-icesee /usr/local/bin/activate-icesee
 COPY --from=builder /usr/local/bin/activate-issm /usr/local/bin/activate-issm
 
-ENV SPACK_ROOT=/opt/spack-src
-ENV PATH=/opt/spack-src/bin:$PATH
 ENV OMP_NUM_THREADS=1
 ENV OPENBLAS_NUM_THREADS=1
 ENV HDF5_MPI=ON

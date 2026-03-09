@@ -1,5 +1,5 @@
 Bootstrap: docker
-From: docker.io/bkyanjo/spack-combined:latest
+From: docker.io/bkyanjo/combined-lean:v1.0
 
 %post
     set -eu
@@ -41,9 +41,15 @@ EOF
     #!/bin/sh
     set -e
     . /opt/set_persistent_dir.sh
-    exec "$@"
+
+    if [ "$#" -gt 0 ]; then
+        exec "$@"
+    else
+        exec /bin/bash
+    fi
 
 %test
+    . /opt/set_persistent_dir.sh
     /usr/local/bin/activate-firedrake python -c "import firedrake; print('firedrake ok')"
     /usr/local/bin/activate-icepack python -c "import icepack; print('icepack ok')"
     /usr/local/bin/activate-icesee python -c "import ICESEE; print('ICESEE ok')"
@@ -51,16 +57,25 @@ EOF
 
 %labels
     Author Brian Kyanjo
-    Name Spack-Combined container
+    Name Combined Lean container
 
 %help
-    Combined container with:
+    Lean combined container with:
       - Firedrake / Icepack / ICESEE on OpenMPI + PETSc 3.24
       - ISSM on MPICH + PETSc 3.22
       - MATLAB from the base image
+
+    This image uses precomputed runtime environment wrappers and does not
+    require Spack activation at container startup.
 
     Use one activation wrapper at a time:
       /usr/local/bin/activate-firedrake
       /usr/local/bin/activate-icepack
       /usr/local/bin/activate-icesee
       /usr/local/bin/activate-issm
+
+    Typical usage:
+      apptainer exec combined-env-lean.sif /usr/local/bin/activate-firedrake python -c "import firedrake"
+      apptainer exec combined-env-lean.sif /usr/local/bin/activate-icepack python -c "import icepack"
+      apptainer exec combined-env-lean.sif /usr/local/bin/activate-icesee python -c "import ICESEE"
+      apptainer exec combined-env-lean.sif /usr/local/bin/activate-issm matlab -batch "disp('MATLAB OK')"

@@ -14,6 +14,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     git \
     ca-certificates \
     curl \
+    patchelf \
+    gmsh \
  && rm -rf /var/lib/apt/lists/*
 
 # Install Icepack into the existing Firedrake venv
@@ -33,10 +35,11 @@ RUN source /opt/spack-src/share/spack/setup-env.sh && \
     unset PETSC_ARCH && \
     source /opt/venv-firedrake/bin/activate && \
     python -m pip install --upgrade pip && \
-    python -m pip install patchelf && \
+    # python -m pip install patchelf && \
     git clone --depth=1 https://github.com/icepack/icepack.git /opt/icepack && \
     python -m pip install --editable /opt/icepack && \
-    python -m pip install gmsh ipykernel
+    python -m pip install ipykernel && \
+    python -c "import firedrake; import icepack; print('Icepack build/import test passed')"
 
 # Optional strip pass
 RUN set -euo pipefail; \

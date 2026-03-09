@@ -1,0 +1,194 @@
+# =========================
+# Stage 1: build everything
+# =========================
+FROM ubuntu:24.04 AS builder
+
+LABEL org.opencontainers.image.authors="Brian Kyanjo <briankyanjo@u.boisestate.edu>" \
+      org.opencontainers.image.title="Spack ICESEE base (builder)" \
+      org.opencontainers.image.description="Builder stage for Spack-managed Python, MPI, HDF5, and pip-installed ICESEE"
+
+SHELL ["/bin/bash", "-lc"]
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    binutils \
+    ca-certificates \
+    curl \
+    file \
+    gfortran \
+    git \
+    gnupg \
+    lsb-release \
+    m4 \
+    make \
+    ninja-build \
+    pkg-config \
+    python3 \
+    python3-pip \
+    python3-venv \
+    unzip \
+    wget \
+    zip \
+    perl \
+    tar \
+    xz-utils \
+    bzip2 \
+    patch \
+    cmake \
+    flex \
+    bison \
+    libssl-dev \
+    libffi-dev \
+    libhwloc-dev \
+    libnuma-dev \
+    openssh-client \
+    locales \
+ && rm -rf /var/lib/apt/lists/*
+
+RUN locale-gen en_US.UTF-8
+ENV LANG=en_US.UTF-8
+ENV LC_ALL=en_US.UTF-8
+
+ENV SPACK_ROOT=/opt/spack-src
+ENV PATH=/opt/spack-src/bin:$PATH
+
+WORKDIR /opt
+
+RUN git clone --depth=1 https://github.com/spack/spack.git /opt/spack-src
+
+COPY spack.yaml /opt/spack-environment/spack.yaml
+COPY icesee-spack /opt/icesee-spack
+COPY scripts/gen_pip_reqs.py /opt/icesee-tools/gen_pip_reqs.py
+
+RUN mkdir -p /opt/requirements /opt/ICESEE /opt/runtime-env
+
+WORKDIR /opt/spack-environment
+RUN source /opt/spack-src/share/spack/setup-env.sh && \
+    spack env activate . && \
+    spack repo add /opt/icesee-spack || true && \
+    spack concretize -f && \
+    spack install -j"$(nproc)"
+
+RUN source /opt/spack-src/share/spack/setup-env.sh && \
+    spack env activate /opt/spack-environment && \
+    PYTHON="$(spack location -i python)/bin/python3" && \
+    "$PYTHON" -m ensurepip --upgrade || true && \
+    "$PYTHON" -m pip install --upgrade pip setuptools wheel
+
+WORKDIR /opt
+RUN git clone --depth=1 https://github.com/ICESEE-project/ICESEE.git /opt/ICESEE
+
+RUN source /opt/spack-src/share/spack/setup-env.sh && \
+    spack env activate /opt/spack-environment && \
+    PYTHON_PREFIX="$(spack location -i python)" && \
+    MPI_DIR="$(spack location -i openmpi)" && \
+    HDF5_DIR="$(spack location -i hdf5)" && \
+    export PATH="${MPI_DIR}/bin:${PATH}" && \
+    export LD_LIBRARY_PATH="${MPI_DIR}/lib:${HDF5_DIR}/lib:${LD_LIBRARY_PATH:-}" && \
+    export CC="${MPI_DIR}/bin/mpicc" && \
+    export CXX="${MPI_DIR}/bin/mpicxx" && \
+    export FC="${MPI_DIR}/bin/mpifort" && \
+    export MPICC="${MPI_DIR}/bin/mpicc" && \
+    export MPICXX="${MPI_DIR}/bin/mpicxx" && \
+    export MPIFC="${MPI_DIR}/bin/mpifort" && \
+    export HDF5_MPI=ON && \
+    "${PYTHON_PREFIX}/bin/python3" -m venv --system-site-packages /opt/venv-icesee && \
+    source /opt/venv-icesee/bin/activate && \
+    python -m pip install --upgrade pip setuptools wheel && \
+    python /opt/icesee-tools/gen_pip_reqs.py \
+      --pyproject /opt/ICESEE/pyproject.toml \
+      --out /opt/requirements/pip.auto.txt \
+      --extras mpi,viz && \
+    python -m pip install --no-cache-dir -r /opt/requirements/pip.auto.txt && \
+    python -m pip install --no-cache-dir -e /opt/ICESEE && \
+    cat > /opt/runtime-env/icesee-env.sh <<EOF
+export PYTHON_DIR="${PYTHON_PREFIX}"
+export MPI_DIR="${MPI_DIR}"
+export HDF5_DIR="${HDF5_DIR}"
+export PATH="/opt/venv-icesee/bin:${PYTHON_PREFIX}/bin:${MPI_DIR}/bin:\${PATH}"
+export LD_LIBRARY_PATH="${MPI_DIR}/lib:${HDF5_DIR}/lib:${PYTHON_PREFIX}/lib:\${LD_LIBRARY_PATH:-}"
+export CC="${MPI_DIR}/bin/mpicc"
+export CXX="${MPI_DIR}/bin/mpicxx"
+export FC="${MPI_DIR}/bin/mpifort"
+export MPICC="${MPI_DIR}/bin/mpicc"
+export MPICXX="${MPI_DIR}/bin/mpicxx"
+export MPIFC="${MPI_DIR}/bin/mpifort"
+export HDF5_MPI=ON
+export PYTHONPATH="/opt/ICESEE:\${PYTHONPATH:-}"
+EOF
+
+RUN source /opt/runtime-env/icesee-env.sh && \
+    python3 -c "import mpi4py; print('mpi4py OK')" && \
+    python3 -c "import h5py; print('h5py OK')"
+
+RUN cat > /usr/local/bin/activate-icesee-nospack.sh <<'EOF'
+#!/bin/bash
+set -e
+source /opt/runtime-env/icesee-env.sh
+exec "$@"
+EOF
+
+RUN chmod +x /usr/local/bin/activate-icesee-nospack.sh
+
+RUN set -euo pipefail; \
+    for ROOT in /opt/spack /opt/venv-icesee; do \
+      [ -d "$ROOT" ] || continue; \
+      find -L "$ROOT" -type f -exec readlink -f '{}' \; | sort -u | \
+        xargs -r file -i | \
+        awk -F: '/charset=binary/ && /x-executable|x-sharedlib/ {print $1}' | \
+        xargs -r strip --strip-unneeded 2>/dev/null || true; \
+    done
+
+
+# =========================
+# Stage 2: lean runtime
+# =========================
+FROM ubuntu:24.04 AS runtime
+
+LABEL org.opencontainers.image.authors="Brian Kyanjo <briankyanjo@u.boisestate.edu>" \
+      org.opencontainers.image.title="ICESEE lean runtime" \
+      org.opencontainers.image.description="Lean runtime image for ICESEE without Spack activation at startup"
+
+SHELL ["/bin/bash", "-lc"]
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    bash \
+    ca-certificates \
+    file \
+    gfortran \
+    locales \
+    openssh-client \
+    perl \
+    python3 \
+    python3-venv \
+    xz-utils \
+    zlib1g \
+    libffi8 \
+    libssl3 \
+    libhwloc15 \
+    libnuma1 \
+    git \
+ && rm -rf /var/lib/apt/lists/*
+
+RUN locale-gen en_US.UTF-8
+ENV LANG=en_US.UTF-8
+ENV LC_ALL=en_US.UTF-8
+
+COPY --from=builder /opt/spack /opt/spack
+COPY --from=builder /opt/venv-icesee /opt/venv-icesee
+COPY --from=builder /opt/ICESEE /opt/ICESEE
+COPY --from=builder /opt/icesee-tools /opt/icesee-tools
+COPY --from=builder /opt/requirements /opt/requirements
+COPY --from=builder /opt/runtime-env /opt/runtime-env
+COPY --from=builder /usr/local/bin/activate-icesee-nospack.sh /usr/local/bin/activate-icesee-nospack.sh
+
+ENV OMP_NUM_THREADS=1
+ENV OPENBLAS_NUM_THREADS=1
+ENV PYTHONPATH=/opt/ICESEE:${PYTHONPATH}
+
+RUN chmod +x /usr/local/bin/activate-icesee-nospack.sh
+
+ENTRYPOINT ["/usr/local/bin/activate-icesee-nospack.sh"]
+CMD ["/bin/bash"]

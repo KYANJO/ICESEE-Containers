@@ -63,14 +63,14 @@ COPY spack.yaml /opt/spack-environment/spack.yaml
 
 # Build the Spack environment
 WORKDIR /opt/spack-environment
-RUN . /opt/spack-src/share/spack/setup-env.sh && \
+RUN source /opt/spack-src/share/spack/setup-env.sh && \
     spack env activate . && \
     spack repo add /opt/icesee-spack || true && \
     spack concretize -f && \
     spack install -j"$(nproc)"
 
 # Ensure pip tooling is present in Spack Python
-RUN . /opt/spack-src/share/spack/setup-env.sh && \
+RUN source /opt/spack-src/share/spack/setup-env.sh && \
     spack env activate /opt/spack-environment && \
     PYTHON="$(spack location -i python)/bin/python3" && \
     "$PYTHON" -m ensurepip --upgrade || true && \
@@ -78,9 +78,9 @@ RUN . /opt/spack-src/share/spack/setup-env.sh && \
 
 # Install Firedrake in a venv layered on top of the Spack Python stack
 WORKDIR /opt
-RUN . /opt/spack-src/share/spack/setup-env.sh && \
+RUN source /opt/spack-src/share/spack/setup-env.sh && \
     spack env activate /opt/spack-environment && \
-    PYTHON="$(spack location -i python)/bin/python3" && \
+    PYTHON_PREFIX="$(spack location -i python)" && \
     MPI_DIR="$(spack location -i openmpi)" && \
     PETSC_DIR="$(spack location -i petsc)" && \
     export PATH="${MPI_DIR}/bin:${PATH}" && \
@@ -94,37 +94,48 @@ RUN . /opt/spack-src/share/spack/setup-env.sh && \
     export PETSC_DIR="${PETSC_DIR}" && \
     unset PETSC_ARCH && \
     export HDF5_MPI=ON && \
-    "$PYTHON" -m venv --system-site-packages /opt/venv-firedrake && \
+    "${PYTHON_PREFIX}/bin/python3" -m venv --system-site-packages /opt/venv-firedrake && \
     source /opt/venv-firedrake/bin/activate && \
     python -m pip install --upgrade pip && \
     printf "setuptools<81\nnumpy<2\npetsc4py==3.24.0\n" > /tmp/constraints.txt && \
     export PIP_CONSTRAINT=/tmp/constraints.txt && \
-    python -m pip install "firedrake[check]"
-
-# Runtime helper script
-RUN cat > /usr/local/bin/activate-spack-firedrake.sh <<'EOF'
-#!/bin/bash
-set -e
-source /opt/spack-src/share/spack/setup-env.sh
-spack env activate /opt/spack-environment
-export MPI_DIR="$(spack location -i openmpi)"
-export PETSC_DIR="$(spack location -i petsc)"
-export PATH="/opt/venv-firedrake/bin:${MPI_DIR}/bin:${PATH}"
-export LD_LIBRARY_PATH="${MPI_DIR}/lib:${PETSC_DIR}/lib:${LD_LIBRARY_PATH:-}"
+    python -m pip install "firedrake[check]" && \
+    mkdir -p /opt/runtime-env && \
+    cat > /opt/runtime-env/firedrake-env.sh <<EOF
+export PYTHON_DIR="${PYTHON_PREFIX}"
+export MPI_DIR="${MPI_DIR}"
+export PETSC_DIR="${PETSC_DIR}"
+export PATH="/opt/venv-firedrake/bin:${PYTHON_PREFIX}/bin:${MPI_DIR}/bin:\${PATH}"
+export LD_LIBRARY_PATH="${MPI_DIR}/lib:${PETSC_DIR}/lib:${PYTHON_PREFIX}/lib:\${LD_LIBRARY_PATH:-}"
 export CC="${MPI_DIR}/bin/mpicc"
 export CXX="${MPI_DIR}/bin/mpicxx"
 export FC="${MPI_DIR}/bin/mpifort"
 export MPICC="${MPI_DIR}/bin/mpicc"
 export MPICXX="${MPI_DIR}/bin/mpicxx"
 export MPIFC="${MPI_DIR}/bin/mpifort"
+export PETSC_DIR="${PETSC_DIR}"
 export HDF5_MPI=ON
+EOF
+
+# Build-time sanity checks
+RUN source /opt/runtime-env/firedrake-env.sh && \
+    unset PETSC_ARCH && \
+    python3 -c "import firedrake; print('firedrake OK')" && \
+    python3 -c "import petsc4py; print('petsc4py OK')" && \
+    python3 -c "from mpi4py import MPI; print('mpi4py OK:', MPI.Get_version())"
+
+# Lean runtime activation helper
+RUN cat > /usr/local/bin/activate-firedrake-nospack.sh <<'EOF'
+#!/bin/bash
+set -e
+source /opt/runtime-env/firedrake-env.sh
 unset PETSC_ARCH
 exec "$@"
 EOF
 
-RUN chmod +x /usr/local/bin/activate-spack-firedrake.sh
+RUN chmod +x /usr/local/bin/activate-firedrake-nospack.sh
 
-# Optional strip pass to shrink copied runtime payload
+# Optional strip pass
 RUN set -euo pipefail; \
     for ROOT in /opt/spack /opt/venv-firedrake; do \
       [ -d "$ROOT" ] || continue; \
@@ -136,27 +147,23 @@ RUN set -euo pipefail; \
 
 
 # =========================
-# Stage 2: runtime image
+# Stage 2: lean runtime image
 # =========================
 FROM ubuntu:24.04 AS runtime
 
 LABEL org.opencontainers.image.authors="Brian Kyanjo <briankyanjo@u.boisestate.edu>" \
-      org.opencontainers.image.title="Spack Firedrake base" \
-      org.opencontainers.image.description="Runtime image with Spack-managed Python, MPI, PETSc, and Firedrake"
+      org.opencontainers.image.title="Firedrake lean runtime" \
+      org.opencontainers.image.description="Lean runtime image for Spack-built Firedrake without Spack activation at startup"
 
 SHELL ["/bin/bash", "-lc"]
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Only runtime packages here
 RUN apt-get update && apt-get install -y --no-install-recommends \
     bash \
     ca-certificates \
     file \
+    git \
     gfortran \
-    libffi-dev \
-    libhwloc-dev \
-    libnuma-dev \
-    libssl-dev \
     locales \
     openssh-client \
     perl \
@@ -164,27 +171,26 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     python3-venv \
     xz-utils \
     zlib1g \
+    libffi8 \
+    libssl3 \
+    libhwloc15 \
+    libnuma1 \
  && rm -rf /var/lib/apt/lists/*
 
 RUN locale-gen en_US.UTF-8
 ENV LANG=en_US.UTF-8
 ENV LC_ALL=en_US.UTF-8
 
-# Copy only what is needed at runtime
-COPY --from=builder /opt/spack-src /opt/spack-src
 COPY --from=builder /opt/spack /opt/spack
-COPY --from=builder /opt/spack-environment /opt/spack-environment
 COPY --from=builder /opt/venv-firedrake /opt/venv-firedrake
-COPY --from=builder /opt/icesee-spack /opt/icesee-spack
-COPY --from=builder /usr/local/bin/activate-spack-firedrake.sh /usr/local/bin/activate-spack-firedrake.sh
+COPY --from=builder /opt/runtime-env /opt/runtime-env
+COPY --from=builder /usr/local/bin/activate-firedrake-nospack.sh /usr/local/bin/activate-firedrake-nospack.sh
 
-ENV SPACK_ROOT=/opt/spack-src
-ENV PATH=/opt/spack-src/bin:$PATH
 ENV OMP_NUM_THREADS=1
 ENV OPENBLAS_NUM_THREADS=1
 ENV HDF5_MPI=ON
 
-RUN chmod +x /usr/local/bin/activate-spack-firedrake.sh
+RUN chmod +x /usr/local/bin/activate-firedrake-nospack.sh
 
-ENTRYPOINT ["/usr/local/bin/activate-spack-firedrake.sh"]
+ENTRYPOINT ["/usr/local/bin/activate-firedrake-nospack.sh"]
 CMD ["/bin/bash"]

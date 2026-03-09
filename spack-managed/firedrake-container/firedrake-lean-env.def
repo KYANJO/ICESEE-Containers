@@ -1,0 +1,93 @@
+Bootstrap: docker
+From: docker.io/bkyanjo/firedrake-lean:v1.0
+
+%post
+    set -eu
+
+    apt-get update && apt-get install -y --no-install-recommends \
+        curl \
+        ca-certificates \
+        && rm -rf /var/lib/apt/lists/*
+
+    # Lean activation helper: no Spack calls at runtime
+    cat << 'EOF' > /opt/activate_firedrake.sh
+#!/bin/sh
+set -e
+
+. /opt/runtime-env/firedrake-env.sh
+unset PETSC_ARCH
+EOF
+
+    # Persistent cache directories
+    cat << 'EOF' > /opt/set_persistent_dir.sh
+#!/bin/sh
+set -e
+
+if [ -d "/scratch" ]; then
+    PERSISTENT_DIR="/scratch/${USER:-$(id -un)}/firedrake_cache"
+else
+    PERSISTENT_DIR="/tmp/${USER:-$(id -un)}/firedrake_cache"
+fi
+
+mkdir -p "$PERSISTENT_DIR/pyop2"
+mkdir -p "$PERSISTENT_DIR/tsfc"
+mkdir -p "$PERSISTENT_DIR/xdg"
+
+export PERSISTENT_DIR
+export PYOP2_CACHE_DIR="$PERSISTENT_DIR/pyop2"
+export FIREDRAKE_TSFC_KERNEL_CACHE_DIR="$PERSISTENT_DIR/tsfc"
+export XDG_CACHE_HOME="$PERSISTENT_DIR/xdg"
+EOF
+
+    chmod +x /opt/activate_firedrake.sh /opt/set_persistent_dir.sh
+
+%environment
+    export OMP_NUM_THREADS=1
+    export OPENBLAS_NUM_THREADS=1
+    export HDF5_MPI=ON
+    export PERSISTENT_DIR=/tmp/${USER}/firedrake_cache
+    export PYOP2_CACHE_DIR=${PERSISTENT_DIR}/pyop2
+    export FIREDRAKE_TSFC_KERNEL_CACHE_DIR=${PERSISTENT_DIR}/tsfc
+    export XDG_CACHE_HOME=${PERSISTENT_DIR}/xdg
+    export PATH=/opt/venv-firedrake/bin:${PATH}
+
+%runscript
+    #!/bin/sh
+    set -e
+    . /opt/activate_firedrake.sh
+    . /opt/set_persistent_dir.sh
+
+    if [ "$#" -gt 0 ]; then
+        exec "$@"
+    else
+        exec /bin/bash
+    fi
+
+%test
+    . /opt/activate_firedrake.sh
+    . /opt/set_persistent_dir.sh
+    python -c "import firedrake; print('firedrake ok')"
+    python -c "import petsc4py; print('petsc4py ok')"
+    mpicc --version
+
+%labels
+    Author Brian Kyanjo
+    ContactEmail briankyanjo@u.boisestate.edu
+    Name Firedrake Lean container
+
+%help
+    This Apptainer container starts from docker.io/bkyanjo/firedrake-lean:v1.0.
+
+    It provides:
+      - Lean runtime for Firedrake
+      - Firedrake installed in /opt/venv-firedrake
+      - PETSc and MPI runtime paths precomputed in /opt/runtime-env/firedrake-env.sh
+      - Runtime helpers for cache directories on /scratch or /tmp
+
+    Helper scripts:
+      - /opt/activate_firedrake.sh
+      - /opt/set_persistent_dir.sh
+
+    Typical usage:
+      apptainer exec firedrake-env-lean.sif python -c "import firedrake; print('ok')"
+      apptainer shell firedrake-env-lean.sif

@@ -1,0 +1,104 @@
+Bootstrap: docker
+From: docker.io/bkyanjo/icesee-spack:lean
+
+%post
+    set -eu
+
+    apt-get update && apt-get install -y --no-install-recommends \
+        curl \
+        ca-certificates \
+        && rm -rf /var/lib/apt/lists/*
+
+    # Activation script (no spack needed)
+    cat << 'EOF' > /opt/activate_icesee.sh
+#!/bin/sh
+set -e
+
+export PATH="/opt/venv-icesee/bin:${PATH}"
+export PYTHONPATH="/opt:${PYTHONPATH:-}"
+
+export OMP_NUM_THREADS=1
+export OPENBLAS_NUM_THREADS=1
+export HDF5_MPI=ON
+EOF
+
+
+    # Persistent cache directories for cluster runs
+    cat << 'EOF' > /opt/set_persistent_dir.sh
+#!/bin/sh
+set -e
+
+if [ -d "/scratch" ]; then
+    PERSISTENT_DIR="/scratch/${USER:-$(id -un)}/icesee_cache"
+else
+    PERSISTENT_DIR="/tmp/${USER:-$(id -un)}/icesee_cache"
+fi
+
+mkdir -p "$PERSISTENT_DIR"
+
+export PERSISTENT_DIR
+export XDG_CACHE_HOME="$PERSISTENT_DIR"
+EOF
+
+    chmod +x /opt/activate_icesee.sh /opt/set_persistent_dir.sh
+
+
+%environment
+    export OMP_NUM_THREADS=1
+    export OPENBLAS_NUM_THREADS=1
+    export HDF5_MPI=ON
+
+    export PATH=/opt/venv-icesee/bin:${PATH}
+    export PYTHONPATH=/opt:${PYTHONPATH}
+
+    export PERSISTENT_DIR=/tmp/${USER}/icesee_cache
+    export XDG_CACHE_HOME=${PERSISTENT_DIR}
+
+
+%runscript
+    #!/bin/sh
+    set -e
+
+    . /opt/activate_icesee.sh
+    . /opt/set_persistent_dir.sh
+
+    if [ "$#" -gt 0 ]; then
+        exec "$@"
+    else
+        exec /bin/bash
+    fi
+
+
+%test
+    . /opt/activate_icesee.sh
+
+    python -c "import ICESEE; print('ICESEE ok')"
+    python -c "import mpi4py, numpy, h5py, zarr; print('core deps ok')"
+
+
+%labels
+    Author Brian Kyanjo
+    ContactEmail briankyanjo@u.boisestate.edu
+    Name ICESEE Lean Container
+
+
+%help
+    ICESEE lean runtime container.
+
+    Base image:
+        docker://bkyanjo/icesee-spack:lean
+
+    Features:
+      - Python virtual environment at /opt/venv-icesee
+      - MPI-enabled Python stack
+      - ICESEE source at /opt/ICESEE
+      - No Spack runtime dependency
+      - Faster startup for HPC jobs
+
+    Example usage:
+
+        apptainer run icesee-lean.sif python -c "import ICESEE"
+
+    Interactive shell:
+
+        apptainer shell icesee-lean.sif

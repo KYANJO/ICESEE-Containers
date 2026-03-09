@@ -1,0 +1,116 @@
+Bootstrap: docker
+From: docker.io/bkyanjo/icesee-spack:v1.0
+
+%post
+    set -eu
+
+    apt-get update && apt-get install -y --no-install-recommends \
+        curl \
+        ca-certificates \
+        && rm -rf /var/lib/apt/lists/*
+
+    # Runtime activation script
+    cat << 'EOF' > /opt/activate_icesee.sh
+#!/bin/sh
+set -e
+
+. /opt/spack-src/share/spack/setup-env.sh
+spack env activate /opt/spack-environment
+
+MPI_DIR="$(spack location -i openmpi)"
+HDF5_DIR="$(spack location -i hdf5)"
+
+export PATH="/opt/venv-icesee/bin:${MPI_DIR}/bin:${PATH}"
+export LD_LIBRARY_PATH="${MPI_DIR}/lib:${HDF5_DIR}/lib:${LD_LIBRARY_PATH:-}"
+
+export CC="${MPI_DIR}/bin/mpicc"
+export CXX="${MPI_DIR}/bin/mpicxx"
+export FC="${MPI_DIR}/bin/mpifort"
+export MPICC="${MPI_DIR}/bin/mpicc"
+export MPICXX="${MPI_DIR}/bin/mpicxx"
+export MPIFC="${MPI_DIR}/bin/mpifort"
+
+export HDF5_MPI=ON
+export PYTHONPATH="/opt:${PYTHONPATH:-}"
+EOF
+
+
+    # Persistent cache directories for HPC runs
+    cat << 'EOF' > /opt/set_persistent_dir.sh
+#!/bin/sh
+set -e
+
+if [ -d "/scratch" ]; then
+    PERSISTENT_DIR="/scratch/${USER:-$(id -un)}/icesee_cache"
+else
+    PERSISTENT_DIR="/tmp/${USER:-$(id -un)}/icesee_cache"
+fi
+
+mkdir -p "$PERSISTENT_DIR"
+
+export PERSISTENT_DIR
+export XDG_CACHE_HOME="$PERSISTENT_DIR"
+EOF
+
+    chmod +x /opt/activate_icesee.sh /opt/set_persistent_dir.sh
+
+
+%environment
+    export OMP_NUM_THREADS=1
+    export OPENBLAS_NUM_THREADS=1
+    export HDF5_MPI=ON
+
+    export PERSISTENT_DIR=/tmp/${USER}/icesee_cache
+    export XDG_CACHE_HOME=${PERSISTENT_DIR}
+
+    export PATH=/opt/venv-icesee/bin:${PATH}
+    export PYTHONPATH=/opt:${PYTHONPATH}
+
+
+%runscript
+    #!/bin/sh
+    set -e
+
+    . /opt/activate_icesee.sh
+    . /opt/set_persistent_dir.sh
+
+    if [ "$#" -gt 0 ]; then
+        exec "$@"
+    else
+        exec /bin/bash
+    fi
+
+
+%test
+    . /opt/activate_icesee.sh
+
+    python -c "import ICESEE; print('ICESEE ok')"
+    python -c "import mpi4py, numpy, h5py, zarr; print('core deps ok')"
+
+
+%labels
+    Author Brian Kyanjo
+    ContactEmail briankyanjo@u.boisestate.edu
+    Name Spack-ICESEE container
+
+
+%help
+    This Apptainer container is based on:
+
+        docker://bkyanjo/icesee-spack:v1.0
+
+    It provides:
+
+      • Spack-managed Python/MPI/HDF5 stack
+      • ICESEE source installed at /opt/ICESEE
+      • Python virtual environment at /opt/venv-icesee
+      • MPI-enabled HDF5 support
+      • Runtime helper scripts for cluster environments
+
+    Typical usage:
+
+        apptainer run icesee.sif python -c "import ICESEE"
+
+    For interactive sessions:
+
+        apptainer shell icesee.sif

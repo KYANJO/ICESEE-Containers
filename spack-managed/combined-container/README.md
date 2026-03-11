@@ -1,17 +1,3 @@
-Below is a **polished GitHub-quality `README.md`** you can copy directly.
-It includes:
-
-* clear sections
-* architecture explanation
-* Docker + Apptainer usage
-* nice tables
-* consistent code blocks
-* a stack diagram (ASCII so it renders everywhere)
-
-This style is typical of **professional research software repositories**.
-
----
-
 # Combined Scientific Stack Containers
 
 A reproducible container environment for **glaciology and geophysical modeling** workflows including:

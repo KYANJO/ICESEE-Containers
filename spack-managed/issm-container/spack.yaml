@@ -16,29 +16,8 @@ spack:
     - py-wheel
     - py-numpy@1.26.4
 
-    # Build tools
-    - autoconf
-    - automake
-    - libtool
-    - m4
-    - cmake
-    - pkgconf
-    - gmake
-    - git
-
     # MPICH for ISSM
     - mpich@4.2.3 +fortran ~wrapperrpath
-    - hdf5@1.14.5 +mpi ^mpich@4.2.3
-
-    # PETSc for ISSM (correct version 3.22.3)
-    - petsc@3.22.3 +mpi +shared +fortran ~fortran-bindings +metis +mumps +scalapack +ptscotch +superlu-dist +hdf5 ^mpich@4.2.3 ^hdf5@1.14.5 +mpi
-
-    # ISSM dependencies (installed separately outside of PETSc)
-    - metis@5.1.0
-    - parmetis@4.0.3
-    - scalapack
-    - mumps
-    - openblas
-
+    
   repos:
     - /opt/icesee-spack

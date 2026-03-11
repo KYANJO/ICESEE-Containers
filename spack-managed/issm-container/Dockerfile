@@ -42,6 +42,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     liblapack-dev \
     zlib1g-dev \
     locales \
+    cmake \
+    gmsh \
  && rm -rf /var/lib/apt/lists/*
 
 RUN locale-gen en_US.UTF-8
@@ -77,14 +79,14 @@ RUN source /opt/spack-src/share/spack/setup-env.sh && \
     "$PYTHON" -m pip install --upgrade pip setuptools wheel
 
 # Build ISSM using the Spack-managed MPICH/PETSc stack
-RUN /opt/build_issm_spack.sh
+RUN export ISSM_DIR="/opt/ISSM" && /opt/build_issm_spack.sh
 
 # Precompute runtime environment so final image does not need Spack activation
 RUN source /opt/spack-src/share/spack/setup-env.sh && \
     spack env activate /opt/spack-environment && \
     mkdir -p /opt/runtime-env && \
     MPI_DIR="$(spack location -i mpich)" && \
-    PETSC_DIR="$(spack location -i petsc)" && \
+    PETSC_DIR="/opt/ISSM/externalpackages/petsc/src" && \
     PYTHON_DIR="$(spack location -i python)" && \
     MATLABROOT="${MATLABROOT:-/opt/matlab/R2024b}" && \
     cat > /opt/runtime-env/issm-env.sh <<EOF
@@ -96,6 +98,7 @@ export ISSM_DIR="/opt/ISSM"
 export PATH="${MPI_DIR}/bin:/opt/ISSM/bin:\${PATH}"
 export LD_LIBRARY_PATH="${MPI_DIR}/lib:${PETSC_DIR}/lib:\${LD_LIBRARY_PATH:-}"
 export HDF5_MPI=ON
+export MLM_LICENSE_FILE=1711@matlablic.ecs.gatech.edu
 EOF
 
 # Runtime helper
@@ -104,9 +107,19 @@ RUN cat > /usr/local/bin/activate-issm-nospack.sh <<'EOF'
 set -e
 source /opt/runtime-env/issm-env.sh
 
-# Add LD_PRELOAD handling for ISSM
-export LD_PRELOAD="${LD_PRELOAD:-/opt/ISSM/lib/libissm.so}"
+# Ensure MATLAB uses GCC libstdc++ (fix for GLIBCXX_3.4.31)
+# if command -v spack >/dev/null 2>&1; then
+#   GCC_PREFIX="$(spack location -i gcc@13)"
+#   if [[ -n "$GCC_PREFIX" ]]; then
+#     PRELOAD="$GCC_PREFIX/lib64/libstdc++.so.6"
+#     [[ -f "$PRELOAD" ]] || PRELOAD="$GCC_PREFIX/lib/libstdc++.so.6"
+#     if [[ -f "$PRELOAD" ]]; then
+#       export LD_PRELOAD="${PRELOAD}${LD_PRELOAD:+:$LD_PRELOAD}"
+#     fi
+#   fi
+# fi
 
+# Add ISSM environment
 if [ -f /opt/ISSM/etc/environment.sh ]; then
     set +u
     . /opt/ISSM/etc/environment.sh

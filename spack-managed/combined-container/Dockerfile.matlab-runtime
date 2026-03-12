@@ -71,13 +71,15 @@ WORKDIR /opt/spack-environment
 RUN source /opt/spack-src/share/spack/setup-env.sh && \
     spack env activate . && \
     # rm -f spack.lock && \
+    # rm -rf .spack-env && \
     spack config blame packages && \
     spack concretize -f && \
     spack install -j"$(nproc)"
 
 RUN source /opt/spack-src/share/spack/setup-env.sh && \
     spack env activate /opt/spack-environment && \
-    PYTHON="$(spack location -i python)/bin/python3" && \
+    PYTHON_PREFIX="$(spack location -i 'python@3.12')" && \
+    PYTHON="${PYTHON_PREFIX}/bin/python3" && \
     "$PYTHON" -m ensurepip --upgrade || true && \
     "$PYTHON" -m pip install --upgrade pip setuptools wheel
 
@@ -90,9 +92,9 @@ RUN export ISSM_DIR="/opt/ISSM" && /opt/build-scripts/build_issm.sh
 RUN source /opt/spack-src/share/spack/setup-env.sh && \
     spack env activate /opt/spack-environment && \
     mkdir -p /opt/runtime-env && \
-    OPENMPI_DIR="$(spack location -i openmpi)" && \
-    FIREDRAKE_PETSC_DIR="$(spack location -i 'petsc@3.24.0 ^openmpi@5.0.6')" && \
-    MPICH_DIR="$(spack location -i mpich)" && \
+    FIREDRAKE_PETSC_DIR="$(spack location -i 'petsc@3.24.0')" && \
+    OPENMPI_DIR="$(spack location -i 'openmpi@5.0.10')" && \
+    MPICH_DIR="$(spack location -i mpich@4.2.3)" && \
     ISSM_PETSC_DIR="/opt/ISSM/externalpackages/petsc/src" && \
     PYTHON_DIR="$(spack location -i python)" && \
     MATLABROOT="${MATLABROOT:-/opt/matlab/R2024b}" && \
@@ -129,7 +131,7 @@ EOF
 RUN cat > /opt/runtime-env/icesee-env.sh <<EOF
 export PYTHON_DIR="${PYTHON_DIR}"
 export MPI_DIR="${OPENMPI_DIR}"
-export HDF5_DIR="$(spack location -i hdf5)"
+export HDF5_DIR="$(spack location -i hdf5@1.14.5)"
 export PATH="/opt/venv-icesee/bin:${MPI_DIR}/bin:\${PATH}"
 export LD_LIBRARY_PATH="${MPI_DIR}/lib:${HDF5_DIR}/lib:\${LD_LIBRARY_PATH:-}"
 export CC="${MPI_DIR}/bin/mpicc"

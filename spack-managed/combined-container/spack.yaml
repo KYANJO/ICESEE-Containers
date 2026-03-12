@@ -2,7 +2,7 @@ spack:
   view: false
 
   concretizer:
-    unify: false
+    unify: when_possible
 
   config:
     install_tree:
@@ -10,18 +10,19 @@ spack:
 
   specs:
     # Python-related dependencies
-    - python@3.11
+    - python@3.12
     - py-pip
     - py-setuptools
     - py-wheel
     - py-numpy@1.26.4
+    - py-cython@3.0.10
 
     # OpenMPI for Firedrake / Icepack / ICESEE
-    - openmpi@5
-    - hdf5@1.14.5 +mpi ^openmpi@5
-    - py-h5py@3.12.1 +mpi ^hdf5@1.14.5 +mpi ^openmpi@5
-    - py-mpi4py ^openmpi@5
-    - petsc@3.24.0 +mpi +shared +fortran ~fortran-bindings +mumps +hypre +metis +ptscotch +superlu-dist +suite-sparse +hdf5 +scalapack +fftw +hwloc ^openmpi@5 ^hdf5@1.14.5 +mpi ^fftw+mpi
+    - openmpi@5.0.10
+    - py-mpi4py ^openmpi@5.0.10
+    - hdf5@1.14.5 +mpi ^openmpi@5.0.10
+    - py-h5py@3.13.0 +mpi ^hdf5@1.14.5 +mpi ^openmpi@5.0.10
+    - petsc@3.24.0 +mpi +shared +fortran ~fortran-bindings +mumps +hypre +metis +ptscotch +superlu-dist +suite-sparse +hdf5 +scalapack +fftw +hwloc ^openmpi@5.0.10 ^hdf5@1.14.5 +mpi ^fftw+mpi
     - py-petsc4py@3.24.0 ^petsc@3.24.0
 
     # MPICH stack for ISSM

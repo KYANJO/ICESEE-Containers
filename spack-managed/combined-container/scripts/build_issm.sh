@@ -30,7 +30,7 @@ MATLABROOT="${MATLABROOT:-/opt/matlab/R2024b}"
 [[ -d "${MATLABROOT}" ]] || die "MATLABROOT not found: ${MATLABROOT}"
 
 # Get MPICH location from Spack
-MPI_DIR="$(spack location -i mpich)"
+MPI_DIR="$(spack location -i mpich@4.2.3)"
 
 # Set necessary environment variables
 export PATH="${MPI_DIR}/bin:${PATH}"

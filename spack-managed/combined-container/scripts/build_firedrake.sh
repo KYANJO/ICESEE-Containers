@@ -14,9 +14,13 @@ source /opt/spack-src/share/spack/setup-env.sh
 spack env activate /opt/spack-environment
 
 # Resolve prefixes
-PYTHON="$(spack location -i python)/bin/python3"
-MPI_DIR="$(spack location -i openmpi)"
-PETSC_DIR="$(spack location -i 'petsc@3.24.0 ^openmpi@5.0.6' 2>/dev/null || spack location -i petsc)"
+PYTHON_PREFIX="$(spack location -i 'python@3.12')" 
+PYTHON="${PYTHON_PREFIX}/bin/python3" 
+PETSC_DIR="$(spack location -i 'petsc@3.24.0')"
+
+# PETSC_HASH="$(spack find -Lv 'petsc@3.24.0' | awk '/petsc@3.24.0/ {print $1; exit}')"
+# MPI_HASH="$(spack spec -Il /${PETSC_HASH} | awk '/openmpi@/ {gsub("^/","",$1); print $1; exit}')"
+MPI_DIR="$(spack location -i 'openmpi@5.0.10')"
 
 [[ -x "${PYTHON}" ]] || die "Python executable not found: ${PYTHON}"
 [[ -d "${MPI_DIR}" ]] || die "OpenMPI prefix not found: ${MPI_DIR}"

@@ -15,8 +15,6 @@ elif [[ -f /opt/spack-src/share/spack/setup-env.sh ]]; then
   # shellcheck disable=SC1091
   source /opt/spack-src/share/spack/setup-env.sh
   spack env activate /opt/spack-environment
-  # PETSC_HASH="$(spack find -Lv 'petsc@3.24.0' | awk '/petsc@3.24.0/ {print $1; exit}')"
-  # MPI_HASH="$(spack spec -Il /${PETSC_HASH} | awk '/openmpi@/ {gsub("^/","",$1); print $1; exit}')"
   export MPI_DIR="$(spack location -i 'openmpi@5.0.10')"
   export HDF5_DIR="$(spack location -i hdf5@1.14.5)"
   export PATH="/opt/venv-icesee/bin:${MPI_DIR}/bin:\${PATH}"

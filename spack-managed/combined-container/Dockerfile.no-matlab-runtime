@@ -47,6 +47,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     liblapack-dev \
     zlib1g-dev \
     locales \
+    cmake \
  && rm -rf /var/lib/apt/lists/*
 
 RUN locale-gen en_US.UTF-8

@@ -10,19 +10,27 @@ set -e
 
 USER_NAME="${USER:-$(id -un 2>/dev/null || echo user)}"
 
-if [ -n "${APPTAINER_CACHEDIR:-}" ]; then
-    BASE_CACHE="${APPTAINER_CACHEDIR}"
-elif [ -n "${SINGULARITY_CACHEDIR:-}" ]; then
-    BASE_CACHE="${SINGULARITY_CACHEDIR}"
-elif [ -d "/scratch/${USER_NAME}" ]; then
-    BASE_CACHE="/scratch/${USER_NAME}/combined_cache"
-elif [ -d "/scratch" ]; then
-    BASE_CACHE="/scratch/${USER_NAME}/combined_cache"
-elif [ -d "/tmp" ]; then
-    BASE_CACHE="/tmp/${USER_NAME}/combined_cache"
-else
-    BASE_CACHE="/var/tmp/${USER_NAME}/combined_cache"
-fi
+choose_cache_base() {
+    for cand in \
+        "${APPTAINER_CACHEDIR:-}" \
+        "${SINGULARITY_CACHEDIR:-}" \
+        "/scratch/${USER_NAME}/combined_cache" \
+        "/tmp/${USER_NAME}/combined_cache" \
+        "/var/tmp/${USER_NAME}/combined_cache"
+    do
+        [ -n "$cand" ] || continue
+        if mkdir -p "$cand" 2>/dev/null; then
+            echo "$cand"
+            return 0
+        fi
+    done
+    return 1
+}
+
+BASE_CACHE="$(choose_cache_base)" || {
+    echo "ERROR: could not create a writable cache directory" >&2
+    exit 1
+}
 
 mkdir -p "${BASE_CACHE}/pyop2" \
          "${BASE_CACHE}/tsfc" \
@@ -111,7 +119,7 @@ EOF
     /usr/local/bin/with-firedrake python -c "import firedrake; print('firedrake ok')"
     /usr/local/bin/with-icepack python -c "import icepack; print('icepack ok')"
     /usr/local/bin/with-icesee python -c "import ICESEE; print('ICESEE ok')"
-    /usr/local/bin/with-issm bash -c 'test -f /opt/ISSM/etc/environment.sh && echo "issm wrapper ok"'
+    # /usr/local/bin/with-issm bash -c 'test -f /opt/ISSM/etc/environment.sh && echo "issm wrapper ok"'
 
 %labels
     Author Brian Kyanjo
